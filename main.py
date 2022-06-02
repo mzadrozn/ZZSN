@@ -53,12 +53,12 @@ def load(image_file):
 #plt.imshow(re / 255.0)
 
 # The facade training set consist of 400 images
-BUFFER_SIZE = 644
+BUFFER_SIZE = 376
 # The batch size of 1 produced better results for the U-Net in the original pix2pix experiment
 BATCH_SIZE = 1
 # Each image is 256x256 in size
-IMG_WIDTH = 256
-IMG_HEIGHT = 256
+IMG_WIDTH = 512
+IMG_HEIGHT = 512
 
 
 def resize(input_image, real_image, height, width):
@@ -88,7 +88,7 @@ def normalize(input_image, real_image):
 @tf.function()
 def random_jitter(input_image, real_image):
   # Resizing to 286x286
-  input_image, real_image = resize(input_image, real_image, 286, 286)
+  input_image, real_image = resize(input_image, real_image, 572, 572)
 
   # Random cropping back to 256x256
   input_image, real_image = random_crop(input_image, real_image)
@@ -119,14 +119,14 @@ def load_image_test(image_file):
 
 
 #train_dataset = tf.data.Dataset.list_files(str(PATH / 'train/*.jpg'))
-train_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined_train\\*.jpg"))
+train_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined512_train\\*.jpg"))
 train_dataset = train_dataset.map(load_image_train,
                                   num_parallel_calls=tf.data.AUTOTUNE)
 train_dataset = train_dataset.shuffle(BUFFER_SIZE)
 train_dataset = train_dataset.batch(BATCH_SIZE)
 
 try:
-  test_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined_test\\*.jpg"))
+  test_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined512_test\\*.jpg"))
   #test_dataset = tf.data.Dataset.list_files(str(PATH / 'test/*.jpg'))
 except tf.errors.InvalidArgumentError:
   test_dataset = tf.data.Dataset.list_files(str(PATH / 'val/*.jpg'))
@@ -183,7 +183,7 @@ def upsample(filters, size, apply_dropout=False):
 #print (up_result.shape)
 
 def Generator():
-  inputs = tf.keras.layers.Input(shape=[256, 256, 3])
+  inputs = tf.keras.layers.Input(shape=[512, 512, 3])
 
   down_stack = [
     downsample(64, 4, apply_batchnorm=False),  # (batch_size, 128, 128, 64)
@@ -239,7 +239,7 @@ tf.keras.utils.plot_model(generator, show_shapes=True, dpi=64)
 #plt.imshow(gen_output[0, ...])
 #plt.show()
 
-LAMBDA = 100
+LAMBDA = 5000
 
 loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
@@ -257,8 +257,8 @@ def generator_loss(disc_generated_output, gen_output, target):
 def Discriminator():
   initializer = tf.random_normal_initializer(0., 0.02)
 
-  inp = tf.keras.layers.Input(shape=[256, 256, 3], name='input_image')
-  tar = tf.keras.layers.Input(shape=[256, 256, 3], name='target_image')
+  inp = tf.keras.layers.Input(shape=[512, 512, 3], name='input_image')
+  tar = tf.keras.layers.Input(shape=[512, 512, 3], name='target_image')
 
   x = tf.keras.layers.concatenate([inp, tar])  # (batch_size, 256, 256, channels*2)
 
@@ -312,9 +312,9 @@ checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
                                  generator=generator,
                                  discriminator=discriminator)
 
-def generate_images(model, test_input, tar):
+def generate_images(model, test_input, tar, save_dir, iteration):
   prediction = model(test_input, training=True)
-  plt.figure(figsize=(15, 15))
+  plt.figure(figsize=(30, 30))
 
   display_list = [test_input[0], tar[0], prediction[0]]
   title = ['Input Image', 'Ground Truth', 'Predicted Image']
@@ -325,39 +325,13 @@ def generate_images(model, test_input, tar):
     # Getting the pixel values in the [0, 1] range to plot.
     plt.imshow(display_list[i] * 0.5 + 0.5)
     plt.axis('off')
-  plt.show()
+  plt.savefig(f"{save_dir}/test-{iteration}.jpg")
+  #plt.show()
 
 log_dir="logs/"
 
 summary_writer = tf.summary.create_file_writer(
   log_dir + "fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-
-@tf.function
-def train_step(input_image, target, step):
-  with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-    gen_output = generator(input_image, training=True)
-
-    disc_real_output = discriminator([input_image, target], training=True)
-    disc_generated_output = discriminator([input_image, gen_output], training=True)
-
-    gen_total_loss, gen_gan_loss, gen_l1_loss = generator_loss(disc_generated_output, gen_output, target)
-    disc_loss = discriminator_loss(disc_real_output, disc_generated_output)
-
-  generator_gradients = gen_tape.gradient(gen_total_loss,
-                                          generator.trainable_variables)
-  discriminator_gradients = disc_tape.gradient(disc_loss,
-                                               discriminator.trainable_variables)
-
-  generator_optimizer.apply_gradients(zip(generator_gradients,
-                                          generator.trainable_variables))
-  discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
-                                              discriminator.trainable_variables))
-
-  with summary_writer.as_default():
-    tf.summary.scalar('gen_total_loss', gen_total_loss, step=step//1000)
-    tf.summary.scalar('gen_gan_loss', gen_gan_loss, step=step//1000)
-    tf.summary.scalar('gen_l1_loss', gen_l1_loss, step=step//1000)
-    tf.summary.scalar('disc_loss', disc_loss, step=step//1000)
 
 
 @tf.function
@@ -390,10 +364,12 @@ def train_step(input_image, target, step):
 
 def fit(train_ds, test_ds, steps):
   example_input, example_target = next(iter(test_ds.take(1)))
+  checkpoint_prefix = "512_training_checkpoints\\"
   start = time.time()
 
   for step, (input_image, target) in train_ds.repeat().take(steps).enumerate():
     if (step) % 1000 == 0:
+
       display.clear_output(wait=True)
 
       if step != 0:
@@ -401,7 +377,7 @@ def fit(train_ds, test_ds, steps):
 
       start = time.time()
 
-      generate_images(generator, example_input, example_target)
+      generate_images(generator, example_input, example_target, "test512", step)
       print(f"Step: {step//1000}k")
 
     train_step(input_image, target, step)
@@ -417,3 +393,10 @@ def fit(train_ds, test_ds, steps):
 
 
 fit(train_dataset, test_dataset, steps=40000)
+# Restoring the latest checkpoint in checkpoint_dir
+#ret = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+
+#i = 0
+#for inp, tar in test_dataset.take(5):
+#  i = i + 1
+#  generate_images(generator, inp, tar, "test", f"512{i}")

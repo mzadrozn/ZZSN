@@ -1,28 +1,11 @@
 import tensorflow as tf
 
 import os
-import pathlib
 import time
 import datetime
 
 from matplotlib import pyplot as plt
 from IPython import display
-
-dataset_name = "facades"
-
-_URL = f'http://efrosgans.eecs.berkeley.edu/pix2pix/datasets/{dataset_name}.tar.gz'
-
-path_to_zip = tf.keras.utils.get_file(
-    fname=f"{dataset_name}.tar.gz",
-    origin=_URL,
-    extract=True)
-
-path_to_zip  = pathlib.Path(path_to_zip)
-
-PATH = path_to_zip.parent/dataset_name
-
-sample_image = tf.io.read_file(str(PATH / 'train/1.jpg'))
-sample_image = tf.io.decode_jpeg(sample_image)
 
 
 def load(image_file):
@@ -44,19 +27,11 @@ def load(image_file):
 
   return input_image, real_image
 
-
-#inp, re = load(str(PATH / 'train/100.jpg'))
-# Casting to int for matplotlib to display the images
-#plt.figure()
-#plt.imshow(inp / 255.0)
-#plt.figure()
-#plt.imshow(re / 255.0)
-
 # The facade training set consist of 400 images
 BUFFER_SIZE = 376
 # The batch size of 1 produced better results for the U-Net in the original pix2pix experiment
 BATCH_SIZE = 1
-# Each image is 256x256 in size
+# Each image is 512x512 in size
 IMG_WIDTH = 512
 IMG_HEIGHT = 512
 
@@ -125,11 +100,8 @@ train_dataset = train_dataset.map(load_image_train,
 train_dataset = train_dataset.shuffle(BUFFER_SIZE)
 train_dataset = train_dataset.batch(BATCH_SIZE)
 
-try:
-  test_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined512_test\\*.jpg"))
-  #test_dataset = tf.data.Dataset.list_files(str(PATH / 'test/*.jpg'))
-except tf.errors.InvalidArgumentError:
-  test_dataset = tf.data.Dataset.list_files(str(PATH / 'val/*.jpg'))
+
+test_dataset = tf.data.Dataset.list_files(str("C:\\Users\\zadro\\OneDrive\\Desktop\\ZZSN\\Projekt\\photoResizer\\data\\combined512_test\\*.jpg"))
 test_dataset = test_dataset.map(load_image_test)
 test_dataset = test_dataset.batch(BATCH_SIZE)
 
@@ -235,9 +207,6 @@ def Generator():
 generator = Generator()
 tf.keras.utils.plot_model(generator, show_shapes=True, dpi=64)
 
-#gen_output = generator(inp[tf.newaxis, ...], training=False)
-#plt.imshow(gen_output[0, ...])
-#plt.show()
 
 LAMBDA = 5000
 
